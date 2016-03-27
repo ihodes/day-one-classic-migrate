@@ -1,10 +1,13 @@
 import xml.etree.ElementTree as et
 import collections
 import os
+import re
 import datetime, time
 
 
 TEMPLATE = u"""# {date}{location}{photo}
+{entry}\n\n\n"""
+REVIEW_TEMPLATE = u"""# [Review] {date}{location}{photo}
 {entry}\n\n\n"""
 
 def parse_date(datestring):
@@ -22,7 +25,11 @@ def dict_from_xml_tree(xml):
         elif item.tag == 'dict':
             if previous_was_key:
                 keyvals[previous_key] = dict_from_xml_tree(list(item.iter())[1:])
-                #keyvals[previous_key] = item
+                previous_was_key = False
+        elif item.tag == 'array':
+            if previous_was_key:
+                items = list(item.iter())[1:]
+                keyvals[previous_key] = [i.text for i in items]
                 previous_was_key = False
         else:
             if previous_was_key:
@@ -59,7 +66,7 @@ def get_filename_for_entry(entry):
 def sort_entries(entries):
     """Given a list of entries, sort them by the creation date, in ascending
 order."""
-    def unix_time(d):
+    def unix_time(e):
         d = parse_date(e['Creation Date']).timetuple()
         return time.mktime(d)
     return sorted(entries, key=unix_time)
@@ -67,30 +74,46 @@ order."""
 def format_entry(entry):
     """Return a string containing the entry in my desired format."""
     text = entry['Entry Text']
+    # Since we have all our entries under a # header by day, we want to make
+    # sure there are no confusing h1s below it in the entry.
+    if text is not None:
+        text = re.sub(r'^(#+) ', r'#\1 ', text, flags=re.MULTILINE)
 
     location = ''
     if 'Location' in entry:
         longitude = entry['Location']['Longitude']
         latitude = entry['Location']['Latitude']
-        location = '\n*@({},{})*\n'.format(longitude, latitude)
+        name = entry['Location'].get('Place Name')
+        if name:
+            location = u'\n*@({},{}: {})*\n'.format(longitude, latitude, name)
+        else:
+            location = u'\n*@({},{})*\n'.format(longitude, latitude)
 
     photo = ''
     if 'photo' in entry:
-        photo = '\n[[{}]]\n'.format(entry['photo'])
+        photo = '\n![]({})\n'.format(entry['photo'])
 
     date = entry['Creation Date']
     date = parse_date(date)
     date = date.strftime('%Y-%m-%d %a %H:%M')
     datestring = '<{}>'.format(date)
+
+    tags = entry.get('Tags')
+    if tags and 'Review' in tags:
+        return REVIEW_TEMPLATE.format(
+            date=datestring,
+            location=location,
+            photo=photo,
+            entry=text)
     return TEMPLATE.format(
-        date=datestring,
-        location=location,
-        photo=photo,
-        entry=text)
+                date=datestring,
+                location=location,
+                photo=photo,
+                entry=text)
 
 
 if __name__ == '__main__':
-    journalfile= '/Users/isaachodes/Dropbox/Apps/Day One/Journal.dayone/'
+    journalfile = '/Users/isaachodes/Dropbox/Apps/Journal.dayone.final.backup/'
     entries = journalfile + 'entries/'
     photos_path = journalfile + 'photos/'
 
@@ -100,14 +123,23 @@ if __name__ == '__main__':
     # Here we make a list of entries by month (well, filename == YYYY-MM.md)
     monthly_entries = collections.defaultdict(list)
     for path in day_one_entries:
+        skip = False
         fullpath = entries + path
         entry = journal_entry_from_day_one_file(
             fullpath, day_one_photos, './photos/')
+        if entry.get('Tags') is not None:
+            if 'Workout' in entry['Tags']:
+                skip = True
         filename = get_filename_for_entry(entry)
-        monthly_entries[filename].append(entry)
+        if not skip:
+            monthly_entries[filename].append(entry)
+
+    sorted_entries = {}
+    for month, entries in monthly_entries.iteritems():
+        sorted_entries[month] = sort_entries(entries)
 
     # Here we write them all out
-    for filename, entries in monthly_entries.iteritems():
+    for filename, entries in sorted_entries.iteritems():
         with open(filename, 'wb') as f:
             for entry in entries:
                 entry_text = format_entry(entry)
