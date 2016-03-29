@@ -3,7 +3,10 @@ import collections
 import os
 import re
 import datetime, time
+import pytz
 
+
+UTC_TZ = pytz.timezone('UTC')
 
 TEMPLATE = u"""# {date}{location}{photo}
 {entry}\n\n\n"""
@@ -12,7 +15,11 @@ REVIEW_TEMPLATE = u"""# [Review] {date}{location}{photo}
 
 def parse_date(datestring):
     """Returns a datetime object from the given DayOne-formatted date string."""
-    return datetime.datetime.strptime(datestring, '%Y-%m-%dT%H:%M:%SZ')
+    date = datetime.datetime.strptime(datestring, '%Y-%m-%dT%H:%M:%SZ')
+    date = date.replace(tzinfo=UTC_TZ)
+    entry_time_zone = pytz.timezone(entry['Time Zone'])
+    date = entry_time_zone.normalize(date)
+    return date
 
 def dict_from_xml_tree(xml):
     previous_was_key = False
@@ -59,8 +66,7 @@ def journal_entry_from_day_one_file(path, day_one_photos, photos_path):
 
 def get_filename_for_entry(entry):
     """Return the filename the given entry should be written to."""
-    date = entry['Creation Date']
-    date = datetime.datetime.strptime(date, '%Y-%m-%dT%H:%M:%SZ')
+    date = parse_date(entry['Creation Date'])
     return date.strftime('%Y-%m') + '.md'
 
 def sort_entries(entries):
@@ -95,8 +101,8 @@ def format_entry(entry):
 
     date = entry['Creation Date']
     date = parse_date(date)
-    date = date.strftime('%Y-%m-%d %a %H:%M')
-    datestring = '<{}>'.format(date)
+    date_string = date.strftime('%Y-%m-%d %a %H:%M')
+    datestring = '<{}>'.format(date_string)
 
     tags = entry.get('Tags')
     if tags and 'Review' in tags:
@@ -125,8 +131,7 @@ if __name__ == '__main__':
     for path in day_one_entries:
         skip = False
         fullpath = entries + path
-        entry = journal_entry_from_day_one_file(
-            fullpath, day_one_photos, './photos/')
+        entry = journal_entry_from_day_one_file( fullpath, day_one_photos, './photos/')
         if entry.get('Tags') is not None:
             if 'Workout' in entry['Tags']:
                 skip = True
