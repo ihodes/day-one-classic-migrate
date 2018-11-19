@@ -20,7 +20,6 @@ LATLONG_RE = '\*@\((-?[0-9.]+),[ ]?(-?[0-9.]+)(:.*)?\)'
 def photo_path_from_line(line):
     m = re.match(PHOTO_RE, line)
     if m:
-        print(m.groups()[0])
         return m.groups()[0]
     else:
         raise ValueError("Can't parse photo from '{}'".format(line))
@@ -79,7 +78,8 @@ def read_journal_file(path):
                 entry['tag'] = 'Review'
             elif line.startswith('!['):
                 entry['photo'] = photo_path_from_line(line)
-                if not entry['photo'].startswith('./photos/'):
+                if not (entry['photo'].startswith('./photos/') \
+                    or entry['photo'].startswith('http')):
                     entry['photo'] = "./photos/" + entry['photo']
             elif line.startswith('*@('):
                 ll = latlong_from_line(line, entry['date'])
